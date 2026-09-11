@@ -163,7 +163,14 @@ games_df = game_frame(games, names)
 
 with st.sidebar:
     st.markdown('<div class="side-brand"><span style="font-size:2rem">⚾</span><b>MY KBO</b><small>FAVORITE CLUB</small></div>', unsafe_allow_html=True)
-    labels = {"🏠 홈": "홈", "⭐ 내 즐겨찾기": "내 즐겨찾기", "🛡️ 팀 선택": "팀 선택"}
+    labels = {
+        "🏠 홈": "홈",
+        "🛡️ 구단 정보": "구단 정보",
+        "📅 경기 일정/결과": "경기 일정/결과",
+        "🏆 구단 순위": "구단 순위",
+        "⭐ 내 즐겨찾기": "내 즐겨찾기",
+        "➕ 즐겨찾기 등록": "팀 선택",
+    }
     chosen = st.radio("메뉴", list(labels), label_visibility="collapsed")
     page = labels[chosen]
     st.divider()
@@ -189,7 +196,76 @@ if page == "홈":
         mine = games_df[(games_df["home_team_id"] == team_id) | (games_df["away_team_id"] == team_id)]
         render_games(mine.sort_values("game_datetime", ascending=False), 6)
     else:
-        st.info("'팀 선택'에서 좋아하는 구단을 등록해 보세요.")
+        st.info("'즐겨찾기 등록'에서 좋아하는 구단을 등록해 보세요.")
+
+    st.subheader("🏆 현재 순위 TOP 5")
+    top_rows = []
+    for row in standings[:5]:
+        top_rows.append({
+            "순위": row["rank"], "구단": names.get(row["team_id"], "-"),
+            "경기": row["games_played"], "승": row["wins"], "패": row["losses"],
+            "무": row["draws"], "승률": float(row["winning_percentage"]),
+        })
+    st.dataframe(pd.DataFrame(top_rows), hide_index=True, use_container_width=True)
+
+elif page == "구단 정보":
+    st.header("🛡️ 2026 KBO 구단 정보")
+    keyword = st.text_input("구단 검색", placeholder="구단명, 연고지 또는 홈구장을 입력하세요")
+    filtered = [
+        team for team in teams
+        if not keyword or keyword.lower() in " ".join([
+            str(team.get("team_name", "")), str(team.get("short_name", "")),
+            str(team.get("city", "")), str(team.get("home_stadium", "")),
+        ]).lower()
+    ]
+    if filtered:
+        cards = [team_card(team, standing_by_team.get(team["team_id"])) for team in filtered]
+        st.markdown('<div class="team-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
+    else:
+        st.info("검색 조건에 맞는 구단이 없습니다.")
+
+elif page == "경기 일정/결과":
+    st.header("📅 경기 일정 및 결과")
+    f1, f2, f3 = st.columns([1, 1, 1.3])
+    status_options = ["전체"] + sorted(games_df["상태"].dropna().unique().tolist())
+    selected_status = f1.selectbox("경기 상태", status_options)
+    selected_team = f2.selectbox("구단", ["전체"] + [team["short_name"] for team in teams])
+    date_range = f3.date_input("경기 기간", value=(), help="선택하지 않으면 전체 기간을 표시합니다.")
+
+    filtered_games = games_df.copy()
+    if selected_status != "전체":
+        filtered_games = filtered_games[filtered_games["상태"] == selected_status]
+    if selected_team != "전체":
+        filtered_games = filtered_games[
+            (filtered_games["원정팀"] == selected_team) | (filtered_games["홈팀"] == selected_team)
+        ]
+    if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+        dates = pd.to_datetime(filtered_games["경기일"]).dt.date
+        filtered_games = filtered_games[(dates >= date_range[0]) & (dates <= date_range[1])]
+
+    st.caption(f"총 {len(filtered_games):,}경기")
+    render_games(filtered_games.sort_values("game_datetime", ascending=False), max(len(filtered_games), 1))
+
+elif page == "구단 순위":
+    st.header("🏆 2026 KBO 구단 순위")
+    ranking = []
+    for row in standings:
+        team = team_by_id.get(row["team_id"], {})
+        ranking.append({
+            "순위": row["rank"], "구단": team.get("team_name", "-"),
+            "경기": row["games_played"], "승": row["wins"], "패": row["losses"],
+            "무": row["draws"], "승률": float(row["winning_percentage"]),
+            "게임차": float(row["games_behind"]),
+        })
+    ranking_df = pd.DataFrame(ranking)
+    st.dataframe(
+        ranking_df.style.background_gradient(subset=["승률"], cmap="Blues").format({"승률": "{:.3f}", "게임차": "{:.1f}"}),
+        hide_index=True, use_container_width=True, height=425,
+    )
+    if not ranking_df.empty:
+        chart = ranking_df.set_index("구단")[["승", "패"]]
+        st.subheader("구단별 승·패 비교")
+        st.bar_chart(chart, color=["#2563EB", "#EF4444"])
 
 elif page == "내 즐겨찾기":
     st.header("내 즐겨찾기")
