@@ -12,6 +12,7 @@ ADMIN_PASSWORD = "충분히 긴 관리자 비밀번호"
 from __future__ import annotations
 
 import hmac
+import html as html_lib
 from datetime import date, datetime, time
 from typing import Any
 
@@ -29,6 +30,33 @@ STATUS_LABEL = {
     "cancelled": "취소",
     "postponed": "연기",
 }
+
+TEAM_STYLE = {
+    "KT": {"color": "#E60012", "code": "KT"},
+    "삼성": {"color": "#074CA1", "code": "SS"},
+    "LG": {"color": "#C30452", "code": "LG"},
+    "KIA": {"color": "#EA0029", "code": "HT"},
+    "두산": {"color": "#131230", "code": "OB"},
+    "NC": {"color": "#315288", "code": "NC"},
+    "한화": {"color": "#FC4E00", "code": "HH"},
+    "SSG": {"color": "#CE0E2D", "code": "SK"},
+    "롯데": {"color": "#041E42", "code": "LT"},
+    "키움": {"color": "#570514", "code": "WO"},
+}
+
+
+def logo_url(short_name: str, stored_url: str | None = None) -> str:
+    if stored_url:
+        return stored_url
+    code = TEAM_STYLE.get(short_name, {}).get("code", "")
+    return (
+        "https://6ptotvmi5753.edge.naverncp.com/KBO_IMAGE/"
+        f"emblem/regular/2026/initial_{code}.png"
+    )
+
+
+def team_color(short_name: str) -> str:
+    return TEAM_STYLE.get(short_name, {}).get("color", "#2563EB")
 
 TABLE_CONFIG = {
     "seasons": {
@@ -135,6 +163,30 @@ def game_frame(games: list[dict], team_names: dict[int, str]) -> pd.DataFrame:
     frame["경기장"] = frame["stadium_name"]
     frame["비고"] = frame["notes"].fillna("")
     return frame[["game_id", "경기일", "시간", "원정팀", "스코어", "홈팀", "경기장", "상태", "비고"]]
+
+
+def render_game_cards(frame: pd.DataFrame, limit: int = 6) -> None:
+    if frame.empty:
+        st.info("표시할 경기가 없습니다.")
+        return
+    cards = []
+    for _, row in frame.head(limit).iterrows():
+        away, home = str(row["원정팀"]), str(row["홈팀"])
+        status = str(row["상태"])
+        badge_class = {
+            "종료": "done", "예정": "ready", "취소": "cancel", "연기": "cancel", "진행 중": "live"
+        }.get(status, "ready")
+        cards.append(f"""
+        <div class="game-card">
+          <div class="game-meta"><span>{html_lib.escape(str(row['경기일']))} · {html_lib.escape(str(row['시간']))}</span><b class="status {badge_class}">{html_lib.escape(status)}</b></div>
+          <div class="matchup">
+            <div class="club"><img src="{logo_url(away)}" alt="{html_lib.escape(away)}"><strong>{html_lib.escape(away)}</strong><small>AWAY</small></div>
+            <div class="score">{html_lib.escape(str(row['스코어']))}</div>
+            <div class="club"><img src="{logo_url(home)}" alt="{html_lib.escape(home)}"><strong>{html_lib.escape(home)}</strong><small>HOME</small></div>
+          </div>
+          <div class="stadium">📍 {html_lib.escape(str(row['경기장']))}</div>
+        </div>""")
+    st.markdown('<div class="game-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
 
 
 def next_id(db: Client, table: str, pk: str) -> int:
@@ -276,12 +328,41 @@ def admin_crud(db: Client, table: str, teams: list[dict], seasons: list[dict]) -
 
 st.markdown("""
 <style>
-  .block-container {padding-top:1.4rem; padding-bottom:3rem}
-  [data-testid="stMetric"] {background:#f7f9fc;border:1px solid #e4e9f1;border-radius:14px;padding:16px}
-  .hero {padding:22px 26px;border-radius:18px;background:linear-gradient(120deg,#102a43,#1565c0);color:white;margin-bottom:16px}
-  .hero h1 {margin:0;font-size:2rem}.hero p {margin:.5rem 0 0;color:#dbeafe}
+  .stApp {background:radial-gradient(circle at 85% 5%,#dbeafe 0,transparent 24%),linear-gradient(180deg,#f8fbff 0%,#fff 48%)}
+  .block-container {padding-top:1.2rem;padding-bottom:3rem;max-width:1380px}
+  [data-testid="stSidebar"] {background:linear-gradient(180deg,#0f172a,#172554)}
+  [data-testid="stSidebar"] * {color:#f8fafc}
+  [data-testid="stSidebar"] > div {padding-top:1.1rem}
+  .side-brand {padding:18px 17px;margin:0 0 16px;border:1px solid rgba(255,255,255,.14);border-radius:18px;background:linear-gradient(135deg,rgba(37,99,235,.42),rgba(239,68,68,.25));box-shadow:0 12px 30px rgba(0,0,0,.18)}
+  .side-brand .ball {display:inline-grid;place-items:center;width:42px;height:42px;border-radius:13px;background:white;font-size:24px;box-shadow:0 7px 18px rgba(0,0,0,.18)}
+  .side-brand h2 {margin:11px 0 2px!important;font-size:1.25rem!important;color:#fff!important}.side-brand p{margin:0;color:#bfdbfe!important;font-size:.75rem;letter-spacing:1.5px;font-weight:700}
+  [data-testid="stSidebar"] [role="radiogroup"] {gap:7px}
+  [data-testid="stSidebar"] [role="radiogroup"] label {padding:10px 12px!important;border:1px solid transparent;border-radius:12px;background:rgba(255,255,255,.045);transition:.18s}
+  [data-testid="stSidebar"] [role="radiogroup"] label:hover {background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.14);transform:translateX(2px)}
+  [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {background:linear-gradient(90deg,#2563eb,#7c3aed);border-color:rgba(255,255,255,.28);box-shadow:0 7px 18px rgba(37,99,235,.3)}
+  [data-testid="stSidebar"] [data-testid="stExpander"] {border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.05)}
+  [data-testid="stSidebar"] .stButton button {width:100%;border-radius:11px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1)}
+  [data-testid="stMetric"] {background:rgba(255,255,255,.92);border:1px solid #dbe5f2;border-top:4px solid #2563eb;border-radius:16px;padding:17px;box-shadow:0 8px 24px rgba(30,64,175,.08)}
+  [data-testid="stMetric"]:nth-child(2n) {border-top-color:#f97316}
+  .hero {position:relative;overflow:hidden;padding:30px 34px;border-radius:24px;background:linear-gradient(120deg,#0f172a 0%,#1d4ed8 52%,#ef4444 120%);color:white;margin-bottom:22px;box-shadow:0 18px 45px rgba(30,64,175,.2)}
+  .hero:after {content:'⚾';position:absolute;right:34px;top:4px;font-size:100px;opacity:.15;transform:rotate(-14deg)}
+  .hero h1 {margin:0;font-size:2.25rem;letter-spacing:-1px}.hero p {margin:.55rem 0 0;color:#dbeafe;font-size:1.05rem}
+  .game-grid {display:grid;grid-template-columns:1fr;gap:14px;margin:8px 0 20px}
+  .game-card {background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:15px 17px;box-shadow:0 7px 22px rgba(15,23,42,.07)}
+  .game-card:hover {transform:translateY(-2px);box-shadow:0 12px 28px rgba(30,64,175,.13);transition:.2s}
+  .game-meta {display:flex;justify-content:space-between;align-items:center;color:#64748b;font-size:.82rem}
+  .status {padding:4px 9px;border-radius:999px;font-size:.72rem}.status.done{background:#dcfce7;color:#166534}.status.ready{background:#dbeafe;color:#1d4ed8}.status.cancel{background:#fee2e2;color:#b91c1c}.status.live{background:#ffedd5;color:#c2410c}
+  .matchup {display:grid;grid-template-columns:1fr 64px 1fr;align-items:center;margin:13px 0 9px}
+  .club {display:flex;flex-direction:column;align-items:center;gap:4px}.club img{width:58px;height:58px;object-fit:contain}.club strong{font-size:1rem}.club small{color:#94a3b8;font-size:.62rem;letter-spacing:1px}
+  .score {font-size:1.28rem;font-weight:900;text-align:center;color:#0f172a}.stadium{text-align:center;color:#64748b;font-size:.78rem;border-top:1px dashed #e2e8f0;padding-top:8px}
+  .team-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}
+  .team-card {position:relative;overflow:hidden;background:#fff;border-radius:20px;padding:22px;border:1px solid #e2e8f0;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+  .team-card:before {content:'';position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--team)}
+  .team-head {display:flex;align-items:center;gap:20px}.team-head img{width:78px;height:78px;object-fit:contain}.team-head h3{margin:0;color:#0f172a;font-size:1.25rem}.team-head p{margin:7px 0 0;color:#64748b}.team-chip{display:inline-block;margin-top:9px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--team) 12%,white);color:var(--team);font-weight:800;font-size:.75rem}
+  div[data-baseweb="tab-list"] {gap:8px}button[data-baseweb="tab"] {background:#fff;border-radius:12px;padding:8px 18px;border:1px solid #e2e8f0}
+  @media(max-width:800px){.game-grid,.team-grid{grid-template-columns:1fr}.hero:after{display:none}}
 </style>
-<div class="hero"><h1>⚾ 2026 KBO 대시보드</h1><p>구단 정보 · 경기 일정 및 결과 · 팀 순위</p></div>
+<div class="hero"><h1>2026 KBO LEAGUE</h1><p>10개 구단의 뜨거운 승부 · 경기 일정 · 결과 · 팀 순위</p></div>
 """, unsafe_allow_html=True)
 
 url, public_key = get_secret("SUPABASE_URL"), get_secret("SUPABASE_KEY")
@@ -306,7 +387,22 @@ if not standings_df.empty:
     standings_df["구단"] = standings_df["team_id"].map(team_names)
 
 with st.sidebar:
-    page = st.radio("메뉴", ["종합 현황", "경기 일정·결과", "팀 순위", "구단 정보", "관리자 CRUD"])
+    st.markdown("""
+    <div class="side-brand">
+      <div class="ball">⚾</div>
+      <h2>KBO DATA CENTER</h2>
+      <p>2026 SEASON</p>
+    </div>
+    """, unsafe_allow_html=True)
+    menu_labels = {
+        "📊 종합 현황": "종합 현황",
+        "🗓️ 경기 일정·결과": "경기 일정·결과",
+        "🏆 팀 순위": "팀 순위",
+        "🛡️ 구단 정보": "구단 정보",
+        "⚙️ 관리자 CRUD": "관리자 CRUD",
+    }
+    selected_menu = st.radio("NAVIGATION", list(menu_labels), label_visibility="collapsed")
+    page = menu_labels[selected_menu]
     st.divider()
     if st.session_state.get("admin"):
         st.success("관리자 로그인됨")
@@ -344,11 +440,11 @@ if page == "종합 현황":
     with left:
         st.subheader("최근 종료 경기")
         recent = games_df[games_df["상태"] == "종료"].sort_values(["경기일", "시간"], ascending=False).head(8)
-        st.dataframe(recent.drop(columns=["game_id"]), use_container_width=True, hide_index=True)
+        render_game_cards(recent, 6)
     with right:
         st.subheader("다가오는 경기")
         upcoming = games_df[games_df["상태"] == "예정"].sort_values(["경기일", "시간"]).head(8)
-        st.dataframe(upcoming.drop(columns=["game_id"]), use_container_width=True, hide_index=True)
+        render_game_cards(upcoming, 6)
 
 elif page == "경기 일정·결과":
     st.header("경기 일정·결과")
@@ -378,21 +474,29 @@ elif page == "팀 순위":
     else:
         view = standings_df[["rank", "구단", "games_played", "wins", "losses", "draws", "winning_percentage", "games_behind"]]
         view.columns = ["순위", "구단", "경기", "승", "패", "무", "승률", "게임차"]
-        st.dataframe(view, use_container_width=True, hide_index=True)
+        view.insert(1, "로고", view["구단"].map(lambda name: logo_url(name)))
+        st.dataframe(
+            view, use_container_width=True, hide_index=True, row_height=64,
+            column_config={"로고": st.column_config.ImageColumn("엠블럼", width="small"),
+                           "승률": st.column_config.NumberColumn(format="%.3f")},
+        )
 
 elif page == "구단 정보":
     st.header("구단 정보")
+    cards = []
     for row in teams:
-        with st.container(border=True):
-            c1, c2 = st.columns([1, 4])
-            with c1:
-                if row.get("logo_url"):
-                    st.image(row["logo_url"], width=90)
-                else:
-                    st.markdown("### ⚾")
-            with c2:
-                st.subheader(row["team_name"])
-                st.write(f"**연고지:** {row['city']}  ·  **홈구장:** {row['home_stadium']}")
+        short = row["short_name"]
+        cards.append(f"""
+        <div class="team-card" style="--team:{team_color(short)}">
+          <div class="team-head">
+            <img src="{logo_url(short, row.get('logo_url'))}" alt="{html_lib.escape(short)} 로고">
+            <div><h3>{html_lib.escape(row['team_name'])}</h3>
+              <p>📍 {html_lib.escape(row['city'])}<br>🏟️ {html_lib.escape(row['home_stadium'])}</p>
+              <span class="team-chip">{html_lib.escape(short)}</span>
+            </div>
+          </div>
+        </div>""")
+    st.markdown('<div class="team-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
 
 else:
     st.header("관리자 CRUD")
